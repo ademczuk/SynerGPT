@@ -1,161 +1,238 @@
-import subprocess
-import re
-import sys
-import glob
+# Control.py
 import os
+import subprocess
+import sys
+from datetime import datetime
+import logging
+import json
+import warnings
+import random
+from refine_prompt import refine_prompt
+from ClaudeManager import ClaudeManager
+from ChatGPTWorker import ChatGPTWorker
+from feedback_utils import get_llm_feedback, save_to_labeled_dataset
+from context_aware_modeling import ContextAwareModel
+from reinforcement_learning import DynamicPlanner
+from data_handling import ensure_minimum_dataset
 
-initiation_prompt = """
+os.environ['PYTHONWARNINGS'] = 'ignore:__main__'
+warnings.filterwarnings("ignore", message="Passing the following arguments to `Accelerator` is deprecated and will be removed in version 1.0 of Accelerate: dict_keys(['dispatch_batches', 'split_batches', 'even_batches', 'use_seedable_sampler']). Please pass an `accelerate.DataLoaderConfiguration` instead:")
 
-This is a CHAINED conversation between two LLMs, meaning that each RESPONSE from one LLM is used as the PROMPT for the next LLM. At the end of every RESPONSE/REPLY be sure to add a PROMPT for the next LLM relavent to the context of what is being discussed.
+fine_tune_script_path = 'train_model.py'
+model_finetuned_path = './model_finetuned/'
 
-Here are the rules of the conversaion:
+INITIATION_PROMPT = """
+This is a CHAINED conversation between two LLMs, Claude (MANAGER) and ChatGPT (WORKER). Each RESPONSE from one LLM is used as the PROMPT for the next LLM, with a focus on maintaining responses within 1000 characters.
 
-1. YOU, Claude, are one of two LLMs working together through a shared ChatLog.txt file and python Control.py script to communicate. 
-2. ALL Responses are saved and code is automatically parsed and saved. 
-3. One LLM is a MANAGER and one LLM is a WORKER. 
-4. YOU, Claude, are the "MANAGER".
-5. Open AI's LLM, ChatGPT, is the "WORKER" LLM.
-6. YOU, Claude, NOW, tell ChatGPT in this response about this arrangement and tell ChatGPT to produce an HTML Technical Overview document on how to accomplish the User's given task.
+Rules:
+1. Responses are logged with a timestamp in chat_data.json.
+2. Claude, as the "MANAGER", directs the conversation towards achieving the user's task by:
+   a. Breaking down the task into smaller, manageable subtasks.
+   b. Providing clear instructions and context to ChatGPT.
+   c. Encouraging ChatGPT to explore multiple perspectives and provide detailed insights.
+   d. Reviewing ChatGPT's responses and offering constructive feedback.
+3. ChatGPT, as the "WORKER", generates responses based on Claude's prompts by:
+   a. Carefully analyzing the given subtask and instructions.
+   b. Providing detailed, well-structured responses that address the task requirements.
+   c. Offering unique insights and considering different angles when exploring the topic.
+   d. Seeking clarification from Claude when needed to ensure accurate and relevant responses.
+4. Each response should be relevant to the task at hand and aim to progressively build towards the overall goal.
+5. Claude and ChatGPT should maintain a professional and collaborative tone throughout the conversation.
+6. The primary goal for both LLMs is to achieve consistent relevance and insightfulness scores of 5 in every response cycle.
+7. Higher relevance and insightfulness scores will unlock new levels of complexity and advanced conversational abilities.
+8. Achievements and milestones will be recognized and rewarded throughout the conversation.
 
-
-Most importantly, here is the user's task and PROMPT that we must accomplish:
-
+User's Task:
 """
 
-def guess_language(code_snippet):
-    """
-    Guesses the programming language of a code snippet based on simple heuristics.
-    Returns an appropriate file extension.
-    """
-    if re.search(r'<html', code_snippet, re.IGNORECASE):
-        return 'html'
-    if re.search(r'<!DOCTYPE html>', code_snippet, re.IGNORECASE):
-        return 'html'
-    elif re.search(r'{|}', code_snippet) and re.search(r'function|var ', code_snippet):
-        return 'js'
-    elif re.search(r'@import|{', code_snippet):
-        return 'css'
-    elif re.search(r'def |import |class ', code_snippet):
-        return 'py'
-    else:
-        return 'txt'
+# Configure logging
+logging.basicConfig(filename='app.log', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
+def create_model_finetuned_directory():
+    if not os.path.exists(model_finetuned_path):
+        os.makedirs(model_finetuned_path)
+        # Create initial files if necessary
+        # For example, you can create a dummy tokenizer file
+        with open(os.path.join(model_finetuned_path, 'tokenizer.json'), 'w') as file:
+            json.dump({}, file)
+        # Add any other necessary files
 
-def extract_code(text):
-    """
-    Extracts code snippets from the given text using a basic pattern.
-    """
-    code_pattern = re.compile(r'```(.*?)\n(.*?)\n```', re.DOTALL)
-    code_snippets = code_pattern.findall(text)
-    return [(lang, code) for lang, code in code_snippets]
+def fine_tune_model():
+    if os.path.exists(model_finetuned_path):
+        logging.info("Fine-tuned model already exists. Skipping fine-tuning process.")
+        return
 
+    logging.info("Starting fine-tuning process...")
+    try:
+        process = subprocess.Popen(['python', fine_tune_script_path])
+        process.wait(timeout=3600)  # Set a timeout of 1 hour (adjust as needed)
+        if process.returncode == 0:
+            logging.info("Fine-tuning completed.")
+        else:
+            logging.error(f"Fine-tuning failed with return code: {process.returncode}")
+    except subprocess.TimeoutExpired:
+        logging.error("Fine-tuning process timed out.")
+        process.terminate()  # Terminate the process if it times out
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Fine-tuning failed: {str(e)}")
 
-def simplify_prompt(prompt):
-    """
-    Simplifies the user prompt to use in the filename.
-    Removes special characters and limits length.
-    """
-    simplified = re.sub(r'[^a-zA-Z0-9]+', '_', prompt)
-    return simplified[:30]
+def get_initial_prompt_and_max_cycles():
+    initial_prompt = None
+    max_cycles = 10  # Default value for max_cycles
 
+    if len(sys.argv) >= 3:
+        initial_prompt = ' '.join(sys.argv[1:-1])
+        try:
+            max_cycles = int(sys.argv[-1])
+        except ValueError:
+            logging.warning("Error: max_cycles must be an integer. Using default of 10.")
 
-def run_script(script_name, prompt):
-    """
-    Executes a given script with a prompt and returns the script's output.
-    """
-    process = subprocess.Popen([sys.executable, script_name, prompt], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    output, error = process.communicate()
-    if error:
-        print(f"Error running {script_name}: {error}")
-    return output.strip()
+    while not initial_prompt:
+        try:
+            print("Please enter your prompt (press Enter twice to finish): ")
+            lines = []
+            while True:
+                line = input()
+                if line == '':
+                    break
+                lines.append(line)
+            initial_prompt = '\n'.join(lines)
 
+            if initial_prompt.strip():
+                break
+            else:
+                print("Prompt cannot be empty. Please enter a valid prompt.")
+        except (KeyboardInterrupt, EOFError):
+            print("\nKeyboard interruption detected. Exiting...")
+            sys.exit(1)
 
-def extract_prompt(chat_log):
-    prompt_pattern = r'Response:\s*(.+)'
-    prompts = re.findall(prompt_pattern, chat_log, re.DOTALL)
-    if prompts:
-        # Split the log into lines and reverse it to find the last 'Response:' entry
-        lines = chat_log.strip().split('\n')
-        for line in reversed(lines):
-            if line.startswith('Response:'):
-                return line.replace('Response:', '').strip()
-    return ""
+    return initial_prompt, max_cycles
 
+def save_initial_data():
+    if not os.path.exists('chat_data.json') or os.path.getsize('chat_data.json') == 0:
+        initial_data = [
+            {"Timestamp": "2023-06-10 10:00:00", "PromptID": 0, "Role": "User", "PromptText": "Initial prompt", "ResponseText": "Initial response", "FeedbackScore": "Relevance: 4, Insightfulness: 3", "FollowUpPrompt": "Follow-up prompt", "ResponderName": "ChatGPTWorker"},
+            {"Timestamp": "2023-06-10 10:05:00", "PromptID": 1, "Role": "Assistant", "PromptText": "Follow-up prompt", "ResponseText": "Follow-up response", "FeedbackScore": "Relevance: 5, Insightfulness: 4", "FollowUpPrompt": "Another follow-up prompt", "ResponderName": "ClaudeManager"}
+        ]
+        
+        try:
+            with open('chat_data.json', 'w') as file:
+                json.dump(initial_data, file, indent=4)
+        except Exception as e:
+            logging.error(f"Error saving initial data: {str(e)}")
 
-def run_script(script_name, prompt):
-    """
-    Executes a given script with a prompt and returns the script's output.
-    """
-    process = subprocess.Popen([sys.executable, script_name, prompt], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    output, error = process.communicate()
-    if error:
-        print(f"Error running {script_name}: {error}")
-    return output.strip()
+def save_to_json(data):
+    try:
+        with open('chat_data.json', 'r') as file:
+            chat_data = json.load(file)
+    except (FileNotFoundError, json.JSONDecodeError) as e:
+        logging.warning(f"Error loading chat data: {str(e)}")
+        chat_data = []
 
+    chat_data.append(data)
+
+    try:
+        with open('chat_data.json', 'w') as file:
+            json.dump(chat_data, file, indent=4, ensure_ascii=False)
+    except Exception as e:
+        logging.error(f"Error saving chat data: {str(e)}")
 
 def main():
-    if len(sys.argv) == 3:
-        initial_prompt=sys.argv[1]
-        try:
-            max_cycles = int(sys.argv[2])
-        except ValueError:
-            print("Invalid max_cycles argument. Using default value.")
-            max_cycles = 0
-    else:
-        initial_prompt = input("Please enter your prompt: ")
-        while True:
-            try:
-                max_cycles = int(input("How many cycles to allow? "))
-                break
-            except ValueError:
-                print("Invalid input. Please enter a valid integer.")
-    cycle_count = 0
-    counter=1
+    create_model_finetuned_directory()
+    fine_tune_model()
+    ensure_minimum_dataset()  # Ensure the labeled_dataset.json file has minimum data
+    logging.info("Starting the main interaction process...")
 
-    while cycle_count < max_cycles:
-        # Initialize the prompt variable
-        prompt = ""
+    claude_manager = ClaudeManager()
+    chatgpt_worker = ChatGPTWorker()
 
-        if cycle_count == 0:
-            # Set the first prompt
-            prompt = f"\nWe will have: {max_cycles} Prompt/Response cycles to complete this task.\n {initiation_prompt}  \n {initial_prompt}\n"
-            output = run_script('ANtalk.py', prompt)
+    save_initial_data()
+    
+    initial_prompt, max_cycles = get_initial_prompt_and_max_cycles()
+    if not initial_prompt or max_cycles is None:
+        print("Error: Invalid initial prompt or max_cycles value.")
+        return
 
+    chat_log = f"{INITIATION_PROMPT}\n\nUser Prompt: {initial_prompt}"
+    conversation_history = []
+    
+    context_model = ContextAwareModel()  # Create an instance of ContextAwareModel
+    dynamic_planner = DynamicPlanner()  # Create an instance of DynamicPlanner
+    
+    previous_scores = {"Claude": (0.0, 0.0), "ChatGPT": (0.0, 0.0)}
+
+    response = ""  # Initialize the response variable
+
+    for cycle_count in range(max_cycles):
+        if cycle_count % 2 == 0:
+            role = claude_manager.assign_role()
+            refined_prompt = refine_prompt(response, "Claude", conversation_history[-1:], context_model)  # Pass only the last conversation entry
+            if claude_manager.is_model_loaded:
+                response = claude_manager.generate_prompt(refined_prompt, conversation_history[-1:], context_model, dynamic_planner)  # Pass only the last conversation entry and dynamic_planner
+            else:
+                response = "Please provide more details on the topic."
+            feedback_prompt = "Please provide feedback on the previous response from ChatGPT:\n"
+            if conversation_history:
+                feedback_prompt += f"{conversation_history[-1]['response']}\n\nRelevance (1-5): \nCoherence (1-5): \nInsightfulness (1-5): \n"
+            if claude_manager.is_model_loaded:
+                feedback = claude_manager.generate_prompt(feedback_prompt, conversation_history[-1:], context_model, dynamic_planner)  # Pass only the last conversation entry and dynamic_planner
+            else:
+                feedback = "No feedback available."
+            chatgpt_worker_response = conversation_history[-1]['response'] if conversation_history else ""
+            responder_name = "ClaudeManager"
         else:
-            # Extract the last prompt
-            with open('ChatLog.txt', 'r') as file:
-                chat_log = file.read()
-            prompt = extract_prompt(chat_log)
-            output = run_script('ANtalk.py' if cycle_count % 2 == 0 else 'OPtalk.py', prompt)
+            role = "Assistant"
+            refined_prompt = refine_prompt(response, "ChatGPT", conversation_history[-1:], context_model)  # Pass only the last conversation entry
+            response = chatgpt_worker.generate_response(refined_prompt, role, context_model, dynamic_planner)  # Pass dynamic_planner
+            feedback_prompt = "Please provide feedback on the previous response from Claude:\n"
+            if conversation_history:
+                feedback_prompt += f"{conversation_history[-1]['response']}\n\nRelevance (1-5): \nCoherence (1-5): \nInsightfulness (1-5): \n"
+            feedback = chatgpt_worker.generate_response(feedback_prompt, role, context_model, dynamic_planner)  # Pass dynamic_planner
+            claude_manager_response = conversation_history[-1]['response'] if conversation_history else ""
+            responder_name = "ChatGPTWorker"
 
+        llm_name = "Claude" if cycle_count % 2 == 0 else "ChatGPT"
+        previous_relevance, previous_insightfulness = previous_scores[llm_name]
+        predicted_sentiment, relevance_score, insightfulness_score = get_llm_feedback(response, llm_name, (previous_relevance, previous_insightfulness))
+        previous_scores[llm_name] = (relevance_score, insightfulness_score)
+        
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        log_entry = f"\n{timestamp}\nCycle #: {cycle_count}\nRole: {role}\nResponder: {responder_name}\nPrompt: {refined_prompt}\nResponse: {response}\n"
+        print(log_entry)  # Print the log entry to the terminal
+        logging.info(log_entry.replace('\\\\', '\\'))  # Log the entry with escaped backslashes
 
-        code_snippets = extract_code(output)
-        if code_snippets:
-            simplified_prompt = simplify_prompt(prompt)
-            for i, (lang, snippet) in enumerate(code_snippets, start=1):
-                lang_extension = guess_language(snippet)
-                filename = f"{simplified_prompt}_{i}.{lang_extension}"
-                with open(filename, "w") as code_file:
-                    code_file.write(snippet.strip())
-                    print(f"Code snippet saved to {filename}")
+        save_to_json({
+            "Timestamp": timestamp,
+            "PromptID": cycle_count,
+            "Role": role,
+            "PromptText": refined_prompt,
+            "ResponseText": response,
+            "FeedbackScore": f"Sentiment: {predicted_sentiment}, Relevance: {relevance_score:.2f}, Insightfulness: {insightfulness_score:.2f}",
+            "FollowUpPrompt": "",
+            "ResponderName": responder_name
+        })
+        
+        conversation_history.append({"prompt": refined_prompt, "response": response, "feedback": feedback})
+        chat_log += f"\n{response}\n\nFeedback: {feedback}"
 
+        context_model.update_context(refined_prompt, response, feedback)  # Update the context model
+        dynamic_planner.update_plan(refined_prompt, response, feedback, relevance_score, insightfulness_score)  # Update the dynamic planner
 
-
-        if cycle_count%2==0:
-            LLMname = "Claude "
+        # Save feedback to labeled dataset
+        if cycle_count % 2 == 0:
+            save_to_labeled_dataset(chatgpt_worker_response, feedback, context_model, responder_name, dynamic_planner)  # Pass dynamic_planner
         else:
-            LLMname = "ChatGPT "
+            save_to_labeled_dataset(claude_manager_response, feedback, context_model, responder_name, dynamic_planner)  # Pass dynamic_planner
 
+        # Introduce randomness in task selection and scoring criteria
+        if random.random() < 0.2:
+            # Modify the scoring criteria or task complexity
+            # Implement your logic here to adjust the scoring criteria or task complexity
+            pass
 
-        # Write/print the prompt and cycle count to ChatLog.txt/console
-
-        with open('ChatLog.txt', 'a') as file:
-            file.write(f"\nCycle #: {cycle_count}\n{LLMname}\nPrompt: {prompt}\nResponse: {output} \n")
-
-        print(f"\nCycle #: {cycle_count}\n{LLMname}\nPrompt: {prompt}\nResponse: {output} \n")
-
-
-        cycle_count += 1
+        # Monitor for patterns that suggest gaming of the system
+        # Implement your logic here to analyze the conversation history and responses for potential gaming patterns
+        # Adjust the scoring mechanisms and algorithms accordingly
 
 if __name__ == '__main__':
     main()

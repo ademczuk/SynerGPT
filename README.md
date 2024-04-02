@@ -1,58 +1,66 @@
-# SynerGPT
+Certainly! Here's a GitHub README for your project:
 
-SynerGPT is an innovative project that enables collaboration between two Large Language Models (LLMs) to efficiently solve complex problems and tackle extensive tasks. By harnessing the power of Anthropic's and OpenAI's LLMs, SynerGPT creates a synergistic environment where a Manager LLM assigns tasks to a Worker LLM, fostering seamless communication and cooperation.
-<p align="center"> <center>
+```markdown
+# AI-Driven Conversation System
 
-![SynerGPT](https://github.com/KyleBenzle/SynerGPT/assets/48848725/cef04e52-c633-4ee6-bfd6-521fc0452342)
-</center>
-</p>
+This project is an AI-driven conversation system that enables two language models, Claude (Manager) and ChatGPT (Worker), to engage in a collaborative and iterative conversation. The system aims to generate meaningful, insightful, and progressively refined responses based on user prompts and dynamic context modeling.
 
+## Features
 
-## Overview
+- Chained conversation between Claude and ChatGPT, where each response serves as the prompt for the next iteration
+- Dynamic context modeling and topic tracking for coherent and relevant conversations
+- Reinforcement learning techniques for adaptive prompt generation and response refinement
+- Sentiment analysis, relevance scoring, and insightfulness evaluation for quality assessment
+- Feedback mechanism for iterative improvement and collaborative learning
+- Logging and data persistence for conversation history and analysis
 
-In SynerGPT, the Anthropic LLM assumes the role of the Manager, overseeing the project and delegating tasks to the Worker LLM, which is powered by OpenAI. The Manager LLM breaks down large jobs into smaller, manageable tasks and assigns them to the Worker LLM. This collaborative approach allows for efficient problem-solving and task completion.
+## Requirements
 
-The communication between the Manager and Worker LLMs is facilitated by a Python script called `Control.py`. This script acts as a mediator, controlling the flow of information and ensuring smooth interaction between the LLMs. All prompts and responses exchanged during the collaboration are recorded in a `ChatLog.txt` file, providing a comprehensive record of the project's progress.
+- Python 3.x
+- PyTorch
+- Transformers
+- NLTK
+- Gensim
+- SQLite
 
-## Key Features
+## Installation
 
-- **Dual LLM Collaboration**: SynerGPT leverages the combined capabilities of Anthropic's and OpenAI's LLMs to tackle complex problems effectively.
-- **Manager-Worker Paradigm**: The Manager LLM assigns tasks to the Worker LLM, ensuring efficient task allocation and completion.
-- **Seamless Communication**: The `Control.py` script facilitates smooth communication between the Manager and Worker LLMs.
-- **Comprehensive Logging**: All prompts and responses are recorded in the `ChatLog.txt` file, providing a detailed history of the project's progress.
-- **Scalability**: SynerGPT is designed to handle large-scale tasks by breaking them down into smaller, manageable subtasks.
+1. Clone the repository:
+   ```
+   git clone https://github.com/your-username/ai-conversation-system.git
+   ```
 
+2. Install the required dependencies:
+   ```
+   pip install -r requirements.txt
+   ```
 
-# Full Description
+3. Set up the necessary configuration files and directories.
 
-SynerGPT is an innovative project that showcases the power of collaboration between two Large Language Models (LLMs) to solve complex problems and tackle extensive tasks efficiently. By leveraging the capabilities of Anthropic's and OpenAI's LLMs, SynerGPT creates a synergistic environment where a Manager LLM assigns tasks to a Worker LLM, fostering seamless communication and cooperation.
+## Usage
 
-The primary objective of SynerGPT is to demonstrate how LLMs can work together in a structured manner to break down large jobs into smaller, manageable tasks. The Manager LLM takes on a supervisory role, overseeing the project and delegating tasks to the Worker LLM. This collaborative approach allows for efficient problem-solving and task completion, even for complex and time-consuming projects.
+1. Run the main script:
+   ```
+   python Control.py
+   ```
 
-SynerGPT utilizes a Python script called `Control.py` to facilitate communication between the Manager and Worker LLMs. This script acts as a mediator, controlling the flow of information and ensuring smooth interaction between the LLMs. All prompts and responses exchanged during the collaboration are recorded in a `ChatLog.txt` file, providing a comprehensive record of the project's progress.
+2. Follow the prompts to enter your initial prompt and specify the maximum number of conversation cycles.
 
-One of the key features of SynerGPT is its scalability. The project is designed to handle large-scale tasks by breaking them down into smaller, manageable subtasks. This approach enables the LLMs to tackle complex problems more effectively and efficiently.
+3. The system will initiate the conversation between Claude and ChatGPT, generating responses, analyzing sentiment, evaluating relevance and insightfulness, and providing feedback.
 
-SynerGPT serves as a proof of concept for the potential of LLM collaboration in various domains, such as natural language processing, problem-solving, and task automation. By showcasing the synergy between different LLMs, SynerGPT opens up new possibilities for leveraging the strengths of multiple language models to achieve greater efficiency and accuracy in task completion.
+4. The conversation history, along with the associated metrics and feedback, will be logged in the `chat_data.json` file.
 
-Whether you are a researcher, developer, or enthusiast interested in exploring the capabilities of LLMs, SynerGPT provides a framework for experimenting with collaborative problem-solving using language models. The project's modular design and well-documented codebase make it easy to extend and adapt to specific use cases.
+5. The labeled dataset will be stored in the `labeled_dataset.json` file, which will be populated with sample data if initially empty.
 
-We invite you to explore SynerGPT, contribute to its development, and witness the power of LLM collaboration in action. Join us in pushing the boundaries of what LLMs can achieve when working together seamlessly.
+## Configuration
 
-## Getting Started
-
-To get started with SynerGPT, follow these steps:
-
-1. Clone the repository.
-2. Install the required dependencies.
-3. Set up the necessary API keys for Anthropic and OpenAI in the respective LLM scripts.
-4. Run the `Control.py` script to initiate the collaboration between the Manager and Worker LLMs.
-5. Provide the initial prompt and specify the number of collaboration cycles.
-6. Monitor the progress and view the results in the `ChatLog.txt` file.
+- Modify the `config.py` file to adjust settings such as logging configuration, file paths, and model parameters.
 
 ## Contributing
 
-We welcome contributions to enhance SynerGPT and expand its capabilities. To contribute, please follow these steps:
+Contributions are welcome! If you find any issues or have suggestions for improvements, please open an issue or submit a pull request.
 
-1. Fork the repository.
-2. Create a new branch for your feature or bug fix:
+## License
+
+This project is licensed under the [MIT License](LICENSE).
+```

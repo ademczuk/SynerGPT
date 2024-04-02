@@ -1,70 +1,95 @@
 import os
 import re
 import sys
+from typing import List, Tuple
 from anthropic import Client, HUMAN_PROMPT, AI_PROMPT
+from transformers import BertTokenizer, BertForSequenceClassification
+import torch
+import logging
+from dotenv import load_dotenv
 
-# Replace 'your_anthropic_api_key' with your actual API key
-anthropic_api_key = ''
-
-# Initialize the Anthropic API client
+load_dotenv()
+anthropic_api_key = os.environ.get('anthropic_api_key')
 client = Client(api_key=anthropic_api_key)
 
-# Function to append a message to the chat log
-def append_to_chat_log(message):
-    with open("ChatLog.txt", 'a') as file:
-        file.write(message + '\n')
+# Configure logging
+logging.basicConfig(filename='app.log', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Function to save code to a file
-def save_code_to_file(code, filename):
-    with open(filename, 'w') as file:
-        file.write(code)
+class ClaudeManager:
+    def __init__(self):
+        self.model_path = './model_finetuned/'
+        if os.path.exists(self.model_path):
+            self.model = BertForSequenceClassification.from_pretrained(self.model_path)
+            self.tokenizer = BertTokenizer.from_pretrained(self.model_path)
+            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            self.model.to(self.device)
+        else:
+            logging.warning("Fine-tuned model not found. Skipping ClaudeManager initialization.")
+            self.model = None
+            self.tokenizer = None
+
+    def generate_prompt(self, previous_response):
+        # Use the fine-tuned BERT model to analyze the previous response
+        # and generate a new prompt based on the analysis
+        if self.model is not None:
+            # Implement your prompt generation logic here
+            new_prompt = "Please elaborate on your previous point."
+        else:
+            new_prompt = "Please provide more details on the topic."
+        return new_prompt
+
+def save_code_to_file(code: str, filename: str) -> None:
+    try:
+        with open(filename, 'w') as file:
+            file.write(code)
+    except Exception as e:
+        logging.error(f"Error saving code to file {filename}: {str(e)}")
+
+def extract_code_blocks(text: str) -> List[Tuple[str, str]]:
+    code_pattern = re.compile(r'```(.*?)\n(.*?)\n```', re.DOTALL)
+    return code_pattern.findall(text)
+
+def get_file_extension(language: str) -> str:
+    language_extensions = {
+        'python': '.py',
+        'javascript': '.js', 
+        'html': '.html',
+        'css': '.css'
+    }
+    return language_extensions.get(language.lower(), '.txt')
 
 def main():
-    # Get the prompt from the command line arguments
     if len(sys.argv) < 2:
-        print("Please provide a prompt as a command line argument.")
+        logging.error("Please provide a prompt as a command line argument.")
         sys.exit(1)
     prompt = sys.argv[1]
 
     try:
-        # Send the prompt to the Anthropic API and get the response
+        new_prompt = prompt  # Initialize new_prompt with the provided prompt
+        if os.path.exists('./model_finetuned/'):
+            claude_manager = ClaudeManager()
+            new_prompt = claude_manager.generate_prompt(prompt)
+
         response = client.completions.create(
-            prompt=f"{HUMAN_PROMPT} {prompt}{AI_PROMPT}",
-            max_tokens_to_sample=150,
+            prompt=f"{HUMAN_PROMPT} {new_prompt}{AI_PROMPT}",
+            max_tokens_to_sample=550,
             model="claude-v1"
         )
 
-        # Extract the generated response
         generated_response = response.completion.strip()
 
-        # Append the prompt and response to the chat log
-#        append_to_chat_log(f"\n\nManager Prompt: {prompt}\n")
-#        append_to_chat_log(f"\n\nManager Response: {generated_response}\n")
-
-        # Check if the response contains code
-        code_blocks = re.findall(r'```(.+?)\n(.+?)```', generated_response, re.DOTALL)
+        code_blocks = extract_code_blocks(generated_response)
         for language, code in code_blocks:
-            # Determine the file extension based on the code language
-            if 'python' in language.lower():
-                file_extension = '.py'
-            elif 'javascript' in language.lower():
-                file_extension = '.js'
-            elif 'html' in language.lower():
-                file_extension = '.html'
-            elif 'css' in language.lower():
-                file_extension = '.css'
-            else:
-                file_extension = '.txt'
-            
-            # Save the code to a file with an appropriate name
+            file_extension = get_file_extension(language)
             filename = f"code_snippet{file_extension}"
             save_code_to_file(code.strip(), filename)
-            print(f"Code saved to {filename}")
+            logging.info(f"Code saved to {filename}")
 
-        print(generated_response)
+        print(generated_response)  # Print the generated response to the terminal
+        logging.info(generated_response)
 
     except Exception as e:
-        print(f"An error occurred: {e}")
+        logging.error(f"An error occurred: {e}")
 
 if __name__ == "__main__":
     main()

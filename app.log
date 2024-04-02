@@ -1,0 +1,4 @@
+2024-04-02 21:44:10,187 - INFO - Load pretrained SentenceTransformer: bert-base-nli-mean-tokens
+2024-04-02 21:44:16,800 - INFO - Use pytorch device_name: cpu
+2024-04-02 21:44:17,823 - INFO - Fine-tuned model already exists. Skipping fine-tuning process.
+2024-04-02 21:44:17,824 - INFO - Starting the main interaction process...

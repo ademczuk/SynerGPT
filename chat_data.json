@@ -1,0 +1,22 @@
+[
+    {
+        "Timestamp": "2023-06-10 10:00:00",
+        "PromptID": 0,
+        "Role": "User",
+        "PromptText": "Initial prompt",
+        "ResponseText": "Initial response",
+        "FeedbackScore": "Relevance: 4, Insightfulness: 3",
+        "FollowUpPrompt": "Follow-up prompt",
+        "ResponderName": "ChatGPTWorker"
+    },
+    {
+        "Timestamp": "2023-06-10 10:05:00",
+        "PromptID": 1,
+        "Role": "Assistant",
+        "PromptText": "Follow-up prompt",
+        "ResponseText": "Follow-up response",
+        "FeedbackScore": "Relevance: 5, Insightfulness: 4",
+        "FollowUpPrompt": "Another follow-up prompt",
+        "ResponderName": "ClaudeManager"
+    }
+]

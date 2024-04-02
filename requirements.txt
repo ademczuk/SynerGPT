@@ -1,0 +1,9 @@
+transformers
+torch
+scikit-learn
+sentence-transformers
+spacy
+gensim
+pysqlite3
+transformers[torch]
+datasets
