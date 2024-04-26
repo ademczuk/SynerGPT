@@ -1,22 +1,32 @@
 [
-    {
-        "Timestamp": "2023-06-10 10:00:00",
-        "PromptID": 0,
-        "Role": "User",
-        "PromptText": "Initial prompt",
-        "ResponseText": "Initial response",
-        "FeedbackScore": "Relevance: 4, Insightfulness: 3",
-        "FollowUpPrompt": "Follow-up prompt",
-        "ResponderName": "ChatGPTWorker"
-    },
-    {
-        "Timestamp": "2023-06-10 10:05:00",
-        "PromptID": 1,
-        "Role": "Assistant",
-        "PromptText": "Follow-up prompt",
-        "ResponseText": "Follow-up response",
-        "FeedbackScore": "Relevance: 5, Insightfulness: 4",
-        "FollowUpPrompt": "Another follow-up prompt",
-        "ResponderName": "ClaudeManager"
-    }
+  {
+    "Timestamp": "2024-04-26 22:48:31",
+    "PromptID": 0,
+    "Role": "Futurist",
+    "PromptText": "",
+    "ResponseText": "",
+    "FeedbackScore": "Sentiment: neutral, Relevance: 0.00, Insightfulness: 0.00",
+    "FollowUpPrompt": "",
+    "ResponderName": "ClaudeManager"
+  },
+  {
+    "Timestamp": "2024-04-26 23:44:02",
+    "PromptID": 0,
+    "Role": "Optimist",
+    "PromptText": "",
+    "ResponseText": "",
+    "FeedbackScore": "Sentiment: neutral, Relevance: 0.00, Insightfulness: 0.00",
+    "FollowUpPrompt": "",
+    "ResponderName": "ClaudeManager"
+  },
+  {
+    "Timestamp": "2024-04-27 00:21:49",
+    "PromptID": 0,
+    "Role": "Optimist",
+    "PromptText": "",
+    "ResponseText": "",
+    "FeedbackScore": "Sentiment: neutral, Relevance: 0.00, Insightfulness: 0.00",
+    "FollowUpPrompt": "",
+    "ResponderName": "ClaudeManager"
+  }
 ]

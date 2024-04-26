@@ -1,4 +1,4 @@
-# Configuration file for the Chat2Chat project
+# config.py
 
 # Path to the fine-tuned model
 MODEL_PATH = './model_finetuned/'

@@ -1,74 +1,61 @@
+# ClaudeManager.py
+from reinforcement_learning import DynamicPlanner
 import os
-from transformers import BertTokenizer, BertForSequenceClassification
 import torch
 import logging
 import random
-
-from topic_modeling import get_topic_clusters
-from semantic_similarity import calculate_semantic_similarity
+from transformers import BertTokenizer, BertForSequenceClassification
 from context_aware_modeling import ContextAwareModel
-from reinforcement_learning import DynamicPlanner
+from typing import List
+from fallback_models import FallbackModel
 
 # Configure logging
 logging.basicConfig(filename='app.log', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)  # Use __name__
+
 
 class ClaudeManager:
-    def __init__(self):
-        self.model_path = './model_finetuned/'
+    def __init__(self, dynamic_planner, model_path='./model_finetuned/'):
+        self.model_path = model_path
         self.is_model_loaded = False
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.dynamic_planner = dynamic_planner  # Store the dynamic_planner instance
+
+        self.load_model()
+        self.fallback_model = FallbackModel()  # Initialize the fallback model 
+
+    def load_model(self):
         if os.path.exists(self.model_path):
             try:
-                self.model = BertForSequenceClassification.from_pretrained(self.model_path, num_labels=3)
+                self.model = BertForSequenceClassification.from_pretrained(self.model_path, ignore_mismatched_sizes=True)
                 self.tokenizer = BertTokenizer.from_pretrained(self.model_path)
-                self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
                 self.model.to(self.device)
                 self.is_model_loaded = True
-            except OSError as e:
-                logging.error(f"Error loading model or tokenizer: {str(e)}")
-                self.model = None
-                self.tokenizer = None
+                logger.info("Model loaded successfully")
+            except Exception as e:
+                logger.error(f"Error loading model: {str(e)}")
+                self.is_model_loaded = False
         else:
-            logging.warning("Fine-tuned model not found. Skipping ClaudeManager initialization.")
-            self.model = None
-            self.tokenizer = None
+            logger.warning("Model path does not exist")
+            self.is_model_loaded = False 
 
-    def generate_prompt(self, previous_response, conversation_history, context_model, dynamic_planner):
-        # Use the fine-tuned BERT model to analyze the previous response
-        # and generate a new prompt based on the analysis
-        if self.is_model_loaded:
-            # Implement your prompt generation logic here
-            new_prompt = "Please elaborate on your previous point."
-            # Incorporate relevant information from conversation history
-            relevant_history = self.get_relevant_history(conversation_history[-1:], previous_response, context_model)  # Pass only the last conversation entry
-            if relevant_history:
-                new_prompt += f"\nAdditional context from previous conversation:\n{relevant_history}"
-            # Add open-ended questions and encourage exploration of multiple perspectives
-            new_prompt += "\nConsider the following questions:\n"
-            new_prompt += "1. What are the potential implications of this idea?\n"
-            new_prompt += "2. How can we approach this from a different angle?\n"
-            new_prompt += "3. What evidence supports or challenges this perspective?"
-            # Use dynamic planning to adapt the conversation flow
-            new_prompt = dynamic_planner.adapt_prompt(new_prompt, previous_response, conversation_history)
-        else:
-            new_prompt = "Please provide more details on the topic."
-        return new_prompt
-
-    def get_relevant_history(self, conversation_history, previous_response, context_model):
-        # Implement logic to retrieve relevant information from conversation history based on previous response
-        # This can be done using techniques like topic modeling or semantic similarity
-        # Return the relevant portion of the conversation history
-        topic_clusters = get_topic_clusters(conversation_history)
-        if not topic_clusters:
-            return ""  # Return an empty string if topic_clusters is empty
-
-        relevant_cluster = context_model.identify_relevant_cluster(previous_response, topic_clusters)
-        if not relevant_cluster:
-            return ""  # Return an empty string if relevant_cluster is empty
-
-        relevant_history = "\n".join([f"Prompt: {conv['prompt']}\nResponse: {conv['response'].replace('\\\\', '\\')}"
-                                      for conv in relevant_cluster])
-        return relevant_history
-
-    def assign_role(self):
-        roles = ["Devil's Advocate", "Optimist", "Skeptic", "Futurist"]
+    def assign_role(self) -> str:
+        roles = ["Devil's Advocate", "Optimist", "Skeptic", "Futurist", "Realist", "Innovator", "Critic", "Visionary"]
         return random.choice(roles)
+
+    def generate_prompt(self, previous_response: str, conversation_history: List[dict], context_model: ContextAwareModel, original_prompt: str) -> str:
+        if self.is_model_loaded:
+            # Fine-tuned model available
+            adapted_prompt = self.dynamic_planner.adapt_prompt(previous_response, conversation_history)
+            logger.info(f"Adapted prompt: {adapted_prompt}")
+
+            # Assuming you have a 'generate_prompt' function for your fine-tuned model
+            # (This is just an example, you might have your custom logic)
+            new_prompt = f"Based on the adapted prompt: '{adapted_prompt}', generate a creative and informative response." 
+            
+            return new_prompt
+        else:
+            # Fallback to FallbackModel
+            logger.warning("Fine-tuned model not loaded. Using fallback model.")
+            fallback_prompt = self.fallback_model.generate_prompt(previous_response, conversation_history, context_model, original_prompt)
+        return fallback_prompt

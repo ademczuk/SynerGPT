@@ -1,53 +1,59 @@
-import os
-import json
+# data_handling.py
 import random
-import sqlite3
 import logging
-from typing import List, Dict, Tuple
+from typing import List, Dict
+from pymongo import MongoClient
 
 # Configure logging
 logging.basicConfig(filename='app.log', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-def load_dataset(dataset_path: str = 'labeled_dataset.db') -> List[Dict[str, any]]:
+# MongoDB connection details
+MONGODB_HOST = 'localhost'
+MONGODB_PORT = 27017
+MONGODB_DATABASE = 'conversation_db'
+MONGODB_COLLECTION = 'dataset'
+
+# Connect to MongoDB
+mongo_client = MongoClient(MONGODB_HOST, MONGODB_PORT)
+db = mongo_client[MONGODB_DATABASE]
+dataset_collection = db[MONGODB_COLLECTION]
+
+def load_dataset() -> List[Dict[str, any]]:
     """
-    Load the labeled dataset from an SQLite database file.
-
-    Args:
-        dataset_path (str): Path to the SQLite database file.
-
+    Load the labeled dataset from MongoDB.
+    The dataset format is as follows:
+    [
+        {
+            "text": str,
+            "feedback": str,
+            "context": dict,
+            "responder_name": str
+        },
+        ...
+    ]
     Returns:
         List[Dict[str, any]]: A list of dictionaries containing the text, feedback, context, and responder name data.
     """
-    # Use an absolute path for the database file
-    dataset_path = os.path.abspath(dataset_path)
-
-    # Check if the database file exists
-    if not os.path.isfile(dataset_path):
-        logging.warning(f"Database file '{dataset_path}' does not exist. Creating a new file.")
-
-    dataset = []
     try:
-        with sqlite3.connect(dataset_path) as conn:
-            c = conn.cursor()
-
-            # Create the "dataset" table if it doesn't exist
-            c.execute('''CREATE TABLE IF NOT EXISTS dataset
-                         (text TEXT, feedback TEXT, context TEXT, responder_name TEXT)''')
-
-            c.execute('SELECT * FROM dataset')
-            rows = c.fetchall()
-            for row in rows:
-                text, feedback, context_json, responder_name = row
-                dataset.append({
-                    'text': text,
-                    'feedback': feedback,
-                    'context': json.loads(context_json),
-                    'responder_name': responder_name
+        dataset = list(dataset_collection.find())
+        
+        # Filter and transform the dataset to ensure the expected structure
+        labeled_data = []
+        for data in dataset:
+            if 'text' in data and 'feedback' in data:
+                labeled_data.append({
+                    'text': data['text'],
+                    'feedback': data['feedback'],
+                    'context': data.get('context', {}),
+                    'responder_name': data.get('responder_name', '')
                 })
-    except sqlite3.Error as e:
-        logging.error(f"Error loading dataset from SQLite: {str(e)}")
-
-    return dataset
+            else:
+                logging.warning(f"Skipping data item due to missing 'text' or 'feedback' field: {data}")
+        
+        return labeled_data
+    except Exception as e:
+        logging.error(f"Error loading dataset from MongoDB: {str(e)}")
+        return []
 
 def generate_synthetic_data(num_samples: int = 100) -> List[Dict[str, any]]:
     """
@@ -77,6 +83,7 @@ def generate_synthetic_data(num_samples: int = 100) -> List[Dict[str, any]]:
             "sentiment": random.choice(["positive", "negative", "neutral"])
         }
         responder_name = random.choice(["ClaudeManager", "ChatGPTWorker"])
+
         synthetic_data.append({
             "text": response,
             "feedback": feedback,
@@ -86,56 +93,55 @@ def generate_synthetic_data(num_samples: int = 100) -> List[Dict[str, any]]:
 
     return synthetic_data
 
-def save_dataset(dataset: List[Dict[str, any]], dataset_path: str = 'labeled_dataset.db') -> None:
+def save_dataset(dataset: List[Dict[str, any]]) -> None:
     """
-    Save the dataset (either loaded or synthetic) to an SQLite database file.
-
+    Save the dataset to MongoDB.
+    The dataset format is as follows:
+    [
+        {
+            "text": str,
+            "feedback": str,
+            "context": dict,
+            "responder_name": str
+        },
+        ...
+    ]
     Args:
         dataset (List[Dict[str, any]]): The dataset to be saved.
-        dataset_path (str): Path to the SQLite database file.
     """
-    # Use an absolute path for the database file
-    dataset_path = os.path.abspath(dataset_path)
-
     try:
-        with sqlite3.connect(dataset_path) as conn:
-            c = conn.cursor()
-            c.execute('CREATE TABLE IF NOT EXISTS dataset (text TEXT, feedback TEXT, context TEXT, responder_name TEXT)')
-            for data in dataset:
-                context_json = json.dumps(data['context'])
-                c.execute("INSERT INTO dataset VALUES (?, ?, ?, ?)", (data['text'], data['feedback'], context_json, data['responder_name']))
-            conn.commit()
-    except sqlite3.Error as e:
-        logging.error(f"Error saving dataset to SQLite: {str(e)}")
+        # Validate the dataset structure
+        for data in dataset:
+            if not isinstance(data, dict) or \
+                    'text' not in data or \
+                    'feedback' not in data or \
+                    'context' not in data or \
+                    'responder_name' not in data:
+                raise ValueError(f"Invalid data structure: {data}")
+
+        dataset_collection.delete_many({})  # Clear existing data
+        dataset_collection.insert_many(dataset)
+        logging.info("Dataset saved to MongoDB.")
+    except Exception as e:
+        logging.error(f"Error saving dataset to MongoDB: {str(e)}")
+
+def clear_mongodb_dataset() -> None:
+    """
+    Clear the dataset collection in MongoDB.
+    """
+    try:
+        dataset_collection.delete_many({})
+        logging.info("MongoDB dataset cleared.")
+    except Exception as e:
+        logging.error(f"Error clearing MongoDB dataset: {str(e)}")
 
 def ensure_minimum_dataset():
     try:
-        with open('labeled_dataset.json', 'r') as file:
-            labeled_data = json.load(file)
-    except (FileNotFoundError, json.JSONDecodeError):
-        labeled_data = []
-
-    if not labeled_data:
-        sample_data = [
-            {
-                "text": "Artificial intelligence has the potential to revolutionize various industries, from healthcare to transportation. However, it also raises ethical concerns regarding job displacement and privacy.",
-                "feedback": "The response provides a balanced view of the potential benefits and risks associated with artificial intelligence. It touches upon key areas such as healthcare, transportation, job displacement, and privacy concerns.",
-                "context": [
-                    "artificial intelligence",
-                    "industries",
-                    "ethical concerns"
-                ],
-                "responder_name": "ClaudeManager",
-                "dynamic_plan": [
-                    "Discuss the potential applications of artificial intelligence in healthcare and transportation.",
-                    "Explore the ethical implications of job displacement caused by AI automation.",
-                    "Analyze the privacy concerns related to AI and data collection."
-                ]
-            }
-        ]
-
-        try:
-            with open('labeled_dataset.json', 'w') as file:
-                json.dump(sample_data, file, indent=2)
-        except Exception as e:
-            logging.error(f"Error saving minimum dataset: {str(e)}")
+        dataset = load_dataset()
+        if len(dataset) < 10:
+            logging.warning("Labeled dataset has less than 10 samples. Generating synthetic data.")
+            synthetic_data = generate_synthetic_data(num_samples=10 - len(dataset))
+            dataset.extend(synthetic_data)
+            save_dataset(dataset)
+    except Exception as e:
+        logging.error(f"Error ensuring minimum dataset: {str(e)}")

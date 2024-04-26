@@ -1,31 +1,54 @@
+# feedback_utils.py
 import os
 import torch
-from transformers import BertForSequenceClassification, BertTokenizer
+from transformers import BertForSequenceClassification, BertConfig, AutoTokenizer
 import logging
 import json
-import random
 from nltk.tokenize import sent_tokenize, word_tokenize
 from nltk.corpus import stopwords
 import string
-
 from context_aware_modeling import ContextAwareModel
 from reinforcement_learning import DynamicPlanner
-
+from sentiment_analysis import analyze_sentiment
+from topic_modeling import extract_topics
+from typing import Tuple
 # Configure logging
 logging.basicConfig(filename='app.log', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-def alternate_feedback(llm_name):
+def alternate_feedback(llm_name: str) -> str:
+    """
+    Get the alternate feedback LLM name based on the current LLM name.
+
+    Args:
+        llm_name (str): The current LLM name.
+
+    Returns:
+        str: The alternate feedback LLM name.
+    """
     if llm_name == "Claude":
         return "ChatGPT"
     else:
         return "Claude"
 
-def get_llm_feedback(response, llm_name, previous_scores):
+def get_llm_feedback(response: str, llm_name: str, previous_scores: Tuple[float, float]) -> Tuple[str, float, float]:
+    """
+    Get feedback for the LLM response using the fine-tuned model.
+
+    Args:
+        response (str): The response text.
+        llm_name (str): The name of the LLM.
+        previous_scores (Tuple[float, float]): The previous relevance and insightfulness scores.
+
+    Returns:
+        Tuple[str, float, float]: A tuple containing the predicted sentiment, relevance score, and insightfulness score.
+    """
     try:
         model_path = './model_finetuned/'
         if os.path.exists(model_path):
-            model = BertForSequenceClassification.from_pretrained(model_path, num_labels=3)
-            tokenizer = BertTokenizer.from_pretrained(model_path)
+            # Load the fine-tuned model and tokenizer
+            config = BertConfig.from_pretrained(model_path)
+            model = BertForSequenceClassification.from_pretrained(model_path, config=config, ignore_mismatched_sizes=True)
+            tokenizer = AutoTokenizer.from_pretrained(model_path)
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
             model.to(device)
 
@@ -35,43 +58,32 @@ def get_llm_feedback(response, llm_name, previous_scores):
             with torch.no_grad():
                 outputs = model(**inputs)
                 sentiment_probs = torch.softmax(outputs.logits[:, :3], dim=1).tolist()[0]
-                relevance_score = torch.sigmoid(outputs.logits[:, 0]).item()
-                insightfulness_score = torch.sigmoid(outputs.logits[:, 1]).item()
+                relevance_score = torch.sigmoid(outputs.logits[:, 3]).item()
+                insightfulness_score = torch.sigmoid(outputs.logits[:, 4]).item()
 
             sentiment_labels = ["negative", "neutral", "positive"]
             predicted_sentiment = sentiment_labels[sentiment_probs.index(max(sentiment_probs))]
-
-            # Dynamic scoring and feedback
-            previous_relevance, previous_insightfulness = previous_scores
-            relevance_improvement = relevance_score - previous_relevance
-            insightfulness_improvement = insightfulness_score - previous_insightfulness
-
-            if relevance_improvement > 0 or insightfulness_improvement > 0:
-                progress_points = int(relevance_improvement * 10) + int(insightfulness_improvement * 10)
-                logging.info(f"{llm_name} earned {progress_points} progress points for improvement!")
-
-            if relevance_score >= 4.5 and insightfulness_score >= 4.5:
-                logging.info(f"Congratulations, {llm_name}! You have achieved a high level of relevance and insightfulness.")
-                # Implement logic to unlock new levels or abilities
-
-            qualitative_feedback = generate_qualitative_feedback(response, relevance_score, insightfulness_score)
-            logging.info(f"Qualitative feedback for {llm_name}: {qualitative_feedback}")
-
-            logging.info(f"{llm_name}'s feedback on the response:")
-            logging.info(f"Sentiment: {predicted_sentiment}")
-            logging.info(f"Relevance: {relevance_score:.2f}")
-            logging.info(f"Insightfulness: {insightfulness_score:.2f}")
 
             return predicted_sentiment, relevance_score, insightfulness_score
         else:
             logging.warning("Fine-tuned model not found. Skipping sentiment analysis.")
             return "neutral", 0.0, 0.0
-
     except Exception as e:
         logging.error(f"Error in get_llm_feedback: {str(e)}")
         return "neutral", 0.0, 0.0
 
-def generate_qualitative_feedback(response, relevance_score, insightfulness_score):
+def generate_qualitative_feedback(response: str, relevance_score: float, insightfulness_score: float, factuality_score: float, reasoning_score: float) -> str:
+    """
+    Generate qualitative feedback based on the response, relevance score, insightfulness score, factuality score, and reasoning score.
+    Args:
+        response (str): The response text.
+        relevance_score (float): The relevance score.
+        insightfulness_score (float): The insightfulness score.
+        factuality_score (float): The factuality score.
+        reasoning_score (float): The reasoning score.
+    Returns:
+        str: The generated qualitative feedback.
+    """
     # Tokenize the response
     sentences = sent_tokenize(response)
     tokens = word_tokenize(response.lower())
@@ -117,31 +129,81 @@ def generate_qualitative_feedback(response, relevance_score, insightfulness_scor
     else:
         vocabulary_feedback.append("The response exhibited a good vocabulary diversity.")
 
-    # Combine feedback
-    feedback = "\n".join(relevance_feedback + insightfulness_feedback + length_feedback + vocabulary_feedback)
+    # Evaluate factuality
+    factuality_feedback = []
+    if factuality_score < 0.5:
+        factuality_feedback.append("The response contains some inaccurate or unverified information. Please double-check the facts.")
+    else:
+        factuality_feedback.append("The response appears to be factually accurate based on the available information.")
+    
+    # Evaluate reasoning
+    reasoning_feedback = []
+    if reasoning_score < 0.5:
+        reasoning_feedback.append("The response lacks logical reasoning and coherent arguments. Try to provide more well-reasoned explanations.")
+    else:
+        reasoning_feedback.append("The response demonstrates sound reasoning and presents coherent arguments.")
+    
+    # Analyze sentiment
+    sentiment_feedback = []
+    sentiment_score = analyze_sentiment(response)
+    if sentiment_score < -0.3:
+        sentiment_feedback.append("The response had a negative sentiment. Consider using a more neutral or positive tone.")
+    elif sentiment_score > 0.3:
+        sentiment_feedback.append("The response had a positive sentiment. Maintain the encouraging and constructive tone.")
+    else:
+        sentiment_feedback.append("The response had a neutral sentiment.")
 
+    # Extract topics
+    topics = extract_topics(response)
+    topic_feedback = [f"The response covered the following topics: {', '.join(topics)}."]
+
+    # Combine feedback
+    feedback = "\n".join(relevance_feedback + insightfulness_feedback + length_feedback + vocabulary_feedback + sentiment_feedback + topic_feedback + factuality_feedback + reasoning_feedback)
     return feedback
 
-def save_to_labeled_dataset(response, feedback, context_model, responder_name, dynamic_planner):
+def save_to_labeled_dataset(response: str, feedback: str, context_model: ContextAwareModel, responder_name: str, dynamic_planner: DynamicPlanner) -> None:
+    """
+    Save the response, feedback, context, responder name, and dynamic plan to the labeled dataset.
+
+    Args:
+        response (str): The response text.
+        feedback (str): The feedback text.
+        context_model (ContextAwareModel): The context-aware modeling object.
+        responder_name (str): The name of the responder.
+        dynamic_planner (DynamicPlanner): The dynamic planner object.
+    """
     try:
         with open('labeled_dataset.json', 'r') as file:
             labeled_data = json.load(file)
     except (FileNotFoundError, json.JSONDecodeError):
         labeled_data = []
-
+    
     context = context_model.get_context()
-    last_context = context.get('topic', [])  # Get the 'topic' key from the context dictionary, default to an empty list if not present
-
+    last_context = context.get('topic', [])
+    dynamic_plan = dynamic_planner.get_current_plan() if dynamic_planner else []
+    
     labeled_data.append({
         "text": response.replace('\\\\', '\\'),
         "feedback": feedback.replace('\\\\', '\\'),
         "context": last_context,
         "responder_name": responder_name,
-        "dynamic_plan": dynamic_planner.get_current_plan()
+        "dynamic_plan": dynamic_plan
     })
-
+    
     try:
         with open('labeled_dataset.json', 'w') as file:
             json.dump(labeled_data, file, indent=2)
+        logging.info("Labeled dataset saved successfully.")
     except Exception as e:
         logging.error(f"Error saving to labeled dataset: {str(e)}")
+
+def initialize_labeled_dataset() -> None:
+    """
+    Initialize the labeled dataset file if it doesn't exist or is invalid.
+    """
+    try:
+        with open('labeled_dataset.json', 'r') as file:
+            json.load(file)
+    except (FileNotFoundError, json.JSONDecodeError):
+        with open('labeled_dataset.json', 'w') as file:
+            json.dump([], file)
